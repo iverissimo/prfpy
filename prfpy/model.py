@@ -31,7 +31,7 @@ class Model(object):
         """
         self.stimulus = stimulus
 
-    def create_hrf(self, hrf_params):
+    def create_hrf(self, hrf_params=[1.0, 1.0, 0.0], osf = 1, onset = 0):
         """
         
         construct single or multiple HRFs        
@@ -53,24 +53,27 @@ class Model(object):
                 np.ones_like(hrf_params[1], dtype='float32')*hrf_params[0] *
                 spm_hrf(
                     tr=self.stimulus.TR,
-                    oversampling=1,
+                    oversampling=osf,
+                    onset=onset,
                     time_length=40)[...,np.newaxis],
                 hrf_params[1] *
                 spm_time_derivative(
                     tr=self.stimulus.TR,
-                    oversampling=1,
+                    oversampling=osf,
+                    onset=onset,
                     time_length=40)[...,np.newaxis],
                 hrf_params[2] *
                 spm_dispersion_derivative(
                     tr=self.stimulus.TR,
-                    oversampling=1,
+                    oversampling=osf,
+                    onset=onset,
                     time_length=40)[...,np.newaxis]],
                     dtype='float32').sum(
             axis=0)                    
 
-        return hrf.T
+        return hrf.T/hrf.T.max()
     
-    def convolve_timecourse_hrf(self, tc, hrf):
+    def convolve_timecourse_hrf(self, tc, hrf, pad_length = 20):
         """
         
         Convolve neural timecourses with single or multiple hrfs.
@@ -89,7 +92,6 @@ class Model(object):
 
         """
         #scipy fftconvolve does not have padding options so doing it manually
-        pad_length = 20
         pad = np.tile(tc[:,0], (pad_length,1)).T
         padded_tc = np.hstack((pad,tc))
         
@@ -157,6 +159,9 @@ class Iso2DGaussianModel(Model):
                  filter_type='dc',
                  filter_params={},
                  normalize_RFs=False,
+                 osf=1,
+                 hrf_onset=0,
+                 pad_length=20,
                  **kwargs):
         """__init__ for Iso2DGaussianModel
 
@@ -181,6 +186,10 @@ class Iso2DGaussianModel(Model):
         super().__init__(stimulus)
         self.__dict__.update(kwargs)
 
+        self.osf = osf
+        self.hrf_onset = hrf_onset
+        self.pad_length = pad_length
+
         # HRF stuff
         if isinstance(hrf, str):
             if hrf == 'direct':  # for use with anything like eCoG with instantaneous irf
@@ -194,12 +203,12 @@ class Iso2DGaussianModel(Model):
                 self.hrf_params = np.copy(hrf)
                 
                 if hrf[0] == 1: 
-                    self.hrf = self.create_hrf(hrf_params=hrf)
+                    self.hrf = self.create_hrf(hrf_params=hrf, osf = self.osf, onset = self.hrf_onset)
                 else:
                     print("WARNING: hrf[0] is not 1. this will confound it with amplitude\
                           parameters. consider setting it to 1 unless you are absolutely sure of what you are doing.\
                           this will also prevent you from fitting the HRF.")
-                    self.hrf = self.create_hrf(hrf_params=hrf)
+                    self.hrf = self.create_hrf(hrf_params=hrf, osf = self.osf, onset = self.hrf_onset)
                     
             # some specific hrf already defined at the TR (!)
             # elif isinstance(hrf, np.ndarray) and len(hrf) > 3:
@@ -301,7 +310,7 @@ class Iso2DGaussianModel(Model):
         if hrf_1 is None or hrf_2 is None:
             current_hrf = self.hrf
         else:
-            current_hrf = self.create_hrf([1.0, hrf_1, hrf_2])
+            current_hrf = self.create_hrf([1.0, hrf_1, hrf_2], osf = self.osf, onset = self.hrf_onset)
 
         # create the single rf
         rf = np.rot90(gauss2D_iso_cart(x=self.stimulus.x_coordinates[..., np.newaxis],
@@ -316,7 +325,7 @@ class Iso2DGaussianModel(Model):
             if current_hrf == 'direct':
                 tc = stimulus_through_prf(rf, dm, self.stimulus.dx)
         else:
-            tc = self.convolve_timecourse_hrf(stimulus_through_prf(rf, dm, self.stimulus.dx), current_hrf)
+            tc = self.convolve_timecourse_hrf(stimulus_through_prf(rf, dm, self.stimulus.dx), current_hrf, pad_length=self.pad_length)
         
 
         if not self.filter_predictions:
@@ -411,7 +420,7 @@ class CSS_Iso2DGaussianModel(Iso2DGaussianModel):
         if hrf_1 is None or hrf_2 is None:
             current_hrf = self.hrf
         else:
-            current_hrf = self.create_hrf([1.0, hrf_1, hrf_2])
+            current_hrf = self.create_hrf([1.0, hrf_1, hrf_2], osf = self.osf, onset = self.hrf_onset)
 
         # create the single rf
         rf = np.rot90(gauss2D_iso_cart(x=self.stimulus.x_coordinates[..., np.newaxis],
@@ -426,7 +435,7 @@ class CSS_Iso2DGaussianModel(Iso2DGaussianModel):
             if current_hrf == 'direct':
                 tc = stimulus_through_prf(rf, dm, self.stimulus.dx)**n[..., np.newaxis]
         else:
-            tc = self.convolve_timecourse_hrf(stimulus_through_prf(rf, dm, self.stimulus.dx)**n[..., np.newaxis], current_hrf)
+            tc = self.convolve_timecourse_hrf(stimulus_through_prf(rf, dm, self.stimulus.dx)**n[..., np.newaxis], current_hrf, pad_length=self.pad_length)
 
         if not self.filter_predictions:
             return baseline[..., np.newaxis] + beta[..., np.newaxis] * tc
@@ -539,7 +548,7 @@ class Norm_Iso2DGaussianModel(Iso2DGaussianModel):
         if hrf_1 is None or hrf_2 is None:
             current_hrf = self.hrf
         else:
-            current_hrf = self.create_hrf([1.0, hrf_1, hrf_2])
+            current_hrf = self.create_hrf([1.0, hrf_1, hrf_2], osf = self.osf, onset = self.hrf_onset)
 
         # slight memory load improvement to avoid holding all rfs in memory
 
@@ -569,7 +578,7 @@ class Norm_Iso2DGaussianModel(Iso2DGaussianModel):
             tc = self.convolve_timecourse_hrf(((prf_amplitude[..., np.newaxis] * activation_part + neural_baseline[..., np.newaxis]) /\
             (srf_amplitude[..., np.newaxis] * normalization_part + surround_baseline[..., np.newaxis]) \
                 - neural_baseline[..., np.newaxis]/surround_baseline[..., np.newaxis]).astype('float32')
-                , current_hrf.astype('float32'))        
+                , current_hrf.astype('float32'), pad_length=self.pad_length)        
 
 
                 
@@ -674,7 +683,7 @@ class DoG_Iso2DGaussianModel(Iso2DGaussianModel):
         if hrf_1 is None or hrf_2 is None:
             current_hrf = self.hrf
         else:
-            current_hrf = self.create_hrf([1.0, hrf_1, hrf_2])
+            current_hrf = self.create_hrf([1.0, hrf_1, hrf_2], osf = self.osf, onset = self.hrf_onset)
         # create the rfs
         prf = np.rot90(gauss2D_iso_cart(x=self.stimulus.x_coordinates[..., np.newaxis],
                                y=self.stimulus.y_coordinates[..., np.newaxis],
@@ -697,7 +706,7 @@ class DoG_Iso2DGaussianModel(Iso2DGaussianModel):
             srf_amplitude[..., np.newaxis] * stimulus_through_prf(srf, dm, self.stimulus.dx)
         else:
             tc = self.convolve_timecourse_hrf(prf_amplitude[..., np.newaxis] * stimulus_through_prf(prf, dm, self.stimulus.dx) - \
-            srf_amplitude[..., np.newaxis] * stimulus_through_prf(srf, dm, self.stimulus.dx), current_hrf)
+            srf_amplitude[..., np.newaxis] * stimulus_through_prf(srf, dm, self.stimulus.dx), current_hrf, pad_length=self.pad_length)
 
 
 
