@@ -458,6 +458,7 @@ class Iso2DGaussianFitter(Fitter):
                     resid[slopes<grid_bounds[0][0]] = +np.inf
                     resid[slopes>grid_bounds[0][1]] = +np.inf
                     
+                resid[np.isnan(resid)] = +np.inf # added to solve all nan batches
 
                 best_pred_voxel = np.nanargmin(resid)
 
@@ -851,6 +852,8 @@ class CSS_Iso2DGaussianFitter(Extend_Iso2DGaussianFitter):
                     resid[slopes<grid_bounds[0][0]] = +np.inf
                     resid[slopes>grid_bounds[0][1]] = +np.inf
 
+                resid[np.isnan(resid)] = +np.inf # added to solve all nan batches
+
                 best_pred_voxel = np.nanargmin(resid)
 
                 rsq = 1 - resid[best_pred_voxel]**2 / \
@@ -1113,7 +1116,8 @@ class DoG_Iso2DGaussianFitter(Extend_Iso2DGaussianFitter):
                         #second bound surround amplitude
                         resid[(sa*slopes)<grid_bounds[1][0]] = +np.inf
                         resid[(sa*slopes)>grid_bounds[1][1]] = +np.inf                    
-                    
+
+                resid[np.isnan(resid)] = +np.inf # added to solve all nan batches   
 
                 best_pred_voxel = np.nanargmin(resid)
 
@@ -1531,6 +1535,8 @@ class Norm_Iso2DGaussianFitter(Extend_Iso2DGaussianFitter):
                         resid[(nb*slopes)<grid_bounds[1][0]] = +np.inf
                         resid[(nb*slopes)>grid_bounds[1][1]] = +np.inf    
 
+                resid[np.isnan(resid)] = +np.inf # added to solve all nan batches
+
                 best_pred_voxel = np.nanargmin(resid)
 
                 rsq = 1 - resid[best_pred_voxel]**2 / \
@@ -1693,6 +1699,8 @@ class CFFitter(Fitter):
                 #if pos_prfs_only:
                 #    if np.any(slopes>0):
                 #        resid[slopes<=0] = +np.inf
+
+                resid[np.isnan(resid)] = +np.inf # added to solve all nan batches
 
                 best_pred_voxel = np.nanargmin(resid)
 
